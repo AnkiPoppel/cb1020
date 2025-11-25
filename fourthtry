@@ -1,0 +1,116 @@
+# libraries 
+from mesa import Agent, Model
+from mesa.discrete_space import CellAgent, FixedAgent
+from mesa.datacollection import DataCollector
+from mesa.space import MultiGrid
+
+import math
+import random
+import matplotlib.pyplot as plt
+
+from mesa.discrete_space import OrthogonalVonNeumannGrid
+
+
+# define agents and behavior
+# merozites 
+class Merozoite(Agent):
+    def __init__(self, unique_id, model, pos):
+        super().__init__(unique_id, model)
+        self.pos = pos
+
+    def step(self):
+        # Move randomly to a neighboring cell (Moore neighborhood)
+        neighbors = self.model.grid.get_neighborhood(self.pos, moore=True, include_center=False)
+        new_pos = random.choice(neighbors)
+        self.model.grid.move_agent(self, new_pos)
+
+        # Try to infect any RBC in the new position
+        cell_agents = self.model.grid.get_cell_list_contents([new_pos])
+        for agent in cell_agents:
+            if isinstance(agent, BloodCell):
+                agent.infect()
+
+
+# blood cell 
+class BloodCell(Agent):
+    def __init__(self, unique_id, model, pos, genotype="normal", infection_risk=0.5):
+        super().__init__(unique_id, model)
+        self.pos = pos
+        self.infected = False # attribute that keeps track of infection
+        self.genotype = genotype
+        self.infection_risk = infection_risk  # probability that infection occurs
+        self.hp = 1  # triggers bursting/removal
+
+    def step(self):
+        if self.infected and self.hp <= 0:
+            self.resolve()
+
+    def infect(self):
+        #Called by a merozoite attempting to infect this RBC
+        if not self.infected:
+            if random.random() < self.infection_risk:
+                self.infected = True
+                self.hp = 0  # triggers bursting/removal in next step
+
+    def resolve(self):
+        #Handle bursting or dying based on genotype
+        if self.genotype == "normal":
+            self.burst()
+        elif self.genotype == "heterozygous":
+            if random.random() < 0.5:
+                self.burst()  # 50% chance to burst
+            # else: dies quietly
+
+        # Remove the RBC in all cases - the infected RBC that burst and the heterozygous ones that sickle 
+        self.model.grid.remove_agent(self)
+        self.model.schedule.remove(self)
+
+    def burst(self):
+        #Produce 2 new merozoites in neighboring empty cells
+        neighbors = self.model.grid.get_neighborhood(self.pos, moore=True, include_center=False)
+        empty_spaces = [pos for pos in neighbors if self.model.grid.is_cell_empty(pos)]
+        # Find all empty neighboring cells where new merozoites can be placed
+        for _ in range(2):  # run loop more times if we want more than 2 merozites. 
+            if empty_spaces:
+                pos = empty_spaces.pop()
+                mero = Merozoite(self.model.next_id(), self.model, pos)
+                self.model.grid.place_agent(mero, pos)
+                self.model.schedule.add(mero)
+
+# model
+class MalariaModel1(Model):
+    def __init__(self, width=10, height=10, n_rbc=70, n_mero=5, genotype="normal"):
+        super().__init__()
+        
+        self.grid = MultiGrid(width, height, True)
+        self.schedule = SimpleScheduler() 
+
+        # Create RBCs
+        for _ in range(n_rbc): # loops until we get 70 
+            x = self.random.randrange(width) # random placement on grid 
+            y = self.random.randrange(height)
+            rbc = BloodCell(self.next_id(), self, (x, y), genotype=genotype) # unique id, initial position and genotype 
+            self.grid.place_agent(rbc, (x, y)) # puts the agent on the grid
+            self.schedule.add(rbc) #says which agent will take a turn each round
+
+        # Create Merozoites
+        for _ in range(n_mero):
+            x = self.random.randrange(width)
+            y = self.random.randrange(height)
+            mero = Merozoite(self.next_id(), self, (x, y))
+            self.grid.place_agent(mero, (x, y))
+            self.schedule.add(mero)
+
+        # Data collection
+        self.datacollector = DataCollector(
+            model_reporters={
+                "Merozoites": lambda m: sum(isinstance(a, Merozoite) for a in m.schedule.agents),
+                "RBCs": lambda m: sum(isinstance(a, BloodCell) for a in m.schedule.agents),
+            }
+        )
+    
+    def step(self):
+        self.datacollector.collect(self)
+        self.schedule.step()
+
+
