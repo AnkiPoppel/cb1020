@@ -1,0 +1,34 @@
+# importing libraries 
+from mesa import Agent, Model
+from mesa.discrete_space import CellAgent, FixedAgent
+from mesa.datacollection import DataCollector
+from mesa.space import MultiGrid
+import math
+from mesa.discrete_space import OrthogonalVonNeumannGrid
+
+class Bloodcell(Agent):
+    def __init__(self, model, unique_id, pos, healthpoint=10, infection_risk=0.5):
+        super().__init__(unique_id, model)
+        self.pos = pos
+        self.hp = healthpoint
+        self.i_risk = infection_risk
+        self.alive = True
+
+    def step(self):
+        # Handle death and reproduction
+        if self.hp <= 9:
+            self.alive = False # Nu död
+            self.hp -= 1
+            
+        if self.hp <= 0:
+            self.model.grid.remove_agent(self)
+            self.model.agents.remove(self)
+
+
+# unique id= för att Mesa ska tilldela ett unikt agent-ID och en anslutning till modellen
+# when you place an agent on a grid --- model.grid.place_agent(agent, pos) --- the grid knows where the agent is, self.pos is so that the agent  knows its position on the grid . explicitly store.  
+# if self hp less than 0 remove from both grid and agent 
+# finns det specifikt orsak for 10hp och att det dods i 9hp? 
+
+
+
