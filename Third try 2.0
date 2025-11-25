@@ -31,4 +31,17 @@ class Bloodcell(Agent):
 # finns det specifikt orsak for 10hp och att det dods i 9hp? 
 
 
+class Sicklecell(CellAgent):
+     def __init__(self, unique_id, model, pos, healthpoint=10, infection_risk=0.5):
+        super().__init__(unique_id, model)
+        self.hp = healthpoint
+        self.i_risk = infection_risk
+        self.alive = True
 
+
+class Merozoite(Agent):
+    def __init__(self, unique_id, model, pos, reproducepoint=10):
+        super().__init__(unique_id, model)
+        self.pos = pos
+        self.rp = reproducepoint
+        self.alive = True  
