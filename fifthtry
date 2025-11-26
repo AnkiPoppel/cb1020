@@ -10,9 +10,29 @@ import random
 
 from mesa.discrete_space import OrthogonalVonNeumannGrid
 
+# custom scheduler 
+
+class SimpleScheduler:
+    def __init__(self):
+        self.agents = []
+
+    def add(self, agent):
+        self.agents.append(agent)
+
+    def remove(self, agent):
+        if agent in self.agents:
+            self.agents.remove(agent)
+
+    def step(self):
+        # Loop through a copy to allow safe removal
+        for agent in self.agents[:]:
+            agent.step()
+
+
 # merozites 
 class Merozoite(Agent):
-    def __init__(self, model, pos):
+    def __init__(self, unique_id, model, pos):
+        self.unique_id = unique_id
         self.model = model
         self.pos = pos
 
@@ -31,14 +51,15 @@ class Merozoite(Agent):
 # defining agents and behavior 
 # blood cell 
 class BloodCell(Agent):
-    def __init__(self, model, pos, genotype="normal", infection_risk=0.5):
+    def __init__(self,  unique_id, model, pos, genotype="normal", infection_risk=0.5):
         self.model = model
+        self.unique_id = unique_id
         self.pos = pos
         self.genotype = genotype
         self.infection_risk = infection_risk
         self.hp = 1
         self.infected = False
-       
+
     def step(self):
         if self.infected and self.hp <= 0:
             self.resolve()
@@ -59,6 +80,10 @@ class BloodCell(Agent):
                 self.burst()  # 50% chance to burst
             # otherwise dies quietly
 
+        # Remove the RBC in all cases - the infected RBC that burst and the heterozygous ones that sickle 
+        self.model.grid.remove_agent(self)
+        self.model.schedule.remove(self)
+
     def burst(self):
         #Produce 2 new merozoites in neighboring empty cells
         neighbors = self.model.grid.get_neighborhood(self.pos, moore=True, include_center=False)
@@ -71,15 +96,16 @@ class BloodCell(Agent):
                 self.model.grid.place_agent(mero, pos)
                 self.model.schedule.add(mero)
 
-        empty_spaces = [pos for pos in neighbors if self.model.grid.is_cell_empty(pos)]
+  #       empty_spaces = [pos for pos in neighbors if self.model.grid.is_cell_empty(pos)]
 
 
-# model
 class MalariaModel1(Model):
     def __init__(self, width=10, height=10, n_rbc=70, n_mero=5, genotype="normal"):
         super().__init__()
         
         self.grid = MultiGrid(width, height, True)
+        self.schedule = SimpleScheduler() 
+        self.current_id = 0  # initialize counter
 
         # Create RBCs
         for _ in range(n_rbc): # loops until we get 70 
@@ -87,13 +113,15 @@ class MalariaModel1(Model):
             y = self.random.randrange(height)
             rbc = BloodCell(self.next_id(), self, (x, y), genotype=genotype) # unique id, initial position and genotype 
             self.grid.place_agent(rbc, (x, y)) # puts the agent on the grid
-    
+            self.schedule.add(rbc) #says which agent will take a turn each round
+
         # Create Merozoites
         for _ in range(n_mero):
             x = self.random.randrange(width)
             y = self.random.randrange(height)
             mero = Merozoite(self.next_id(), self, (x, y))
             self.grid.place_agent(mero, (x, y))
+            self.schedule.add(mero)
 
         # Data collection
         self.datacollector = DataCollector(
@@ -102,7 +130,35 @@ class MalariaModel1(Model):
                 "RBCs": lambda m: sum(isinstance(a, BloodCell) for a in m.schedule.agents),
             }
         )
+
+    def next_id(self):
+        self.current_id += 1
+        return self.current_id
     
     def step(self):
         self.datacollector.collect(self)
         self.schedule.step()
+
+
+
+# simulation for healthy RBC with plot 
+
+# Create a model instance
+model1 = MalariaModel1(width=10, height=10, n_rbc=70, n_mero=5, genotype="normal")
+
+n_steps = 50  # number of time steps to simulate
+
+# Run the simulation
+for i in range(n_steps):
+    model1.step()  # use the correct instance
+
+# Convert collected data to pandas DataFrame
+df = model1.datacollector.get_model_vars_dataframe()
+
+# Plot results
+df.plot()
+plt.xlabel("Step")
+plt.ylabel("Number of agents")
+plt.title("Malaria Simulation: Normal RBC")
+plt.show()
+
